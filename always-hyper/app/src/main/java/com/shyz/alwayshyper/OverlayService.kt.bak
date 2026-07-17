@@ -1,0 +1,317 @@
+package com.shyz.alwayshyper
+
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.app.Service
+import android.content.Context
+import android.content.Intent
+import android.content.SharedPreferences
+import android.content.res.Configuration
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.PixelFormat
+import android.graphics.Rect
+import android.graphics.drawable.Drawable
+import android.graphics.drawable.GradientDrawable
+import android.os.Build
+import android.os.IBinder
+import android.provider.Settings
+import android.util.TypedValue
+import android.view.Gravity
+import android.view.View
+import android.view.WindowManager
+import androidx.core.app.NotificationCompat
+import androidx.core.graphics.drawable.RoundedBitmapDrawableFactory
+import androidx.core.view.ViewCompat
+import java.io.File
+
+/**
+ * Keeps a small pill ("island") attached near the front camera, above every
+ * other app, using a TYPE_APPLICATION_OVERLAY window.
+ *
+ * - Colour/size/position update live from SharedPreferences while the user
+ *   changes them in MainActivity.
+ * - The pill is anchored to the device's actual camera cutout (via the
+ *   DisplayCutout API) when the device reports one, so it stays next to the
+ *   camera regardless of screen rotation. If no cutout is reported (or on
+ *   API < 28, before DisplayCutout existed), it falls back to a simple
+ *   top-center position.
+ * - The pill is plain black by default. If the user turns on "auto-contrast"
+ *   in the app, it switches to the selected accent colour whenever the
+ *   system is in dark theme, so it doesn't disappear against dark
+ *   backgrounds — we can't sample real pixels behind the overlay without a
+ *   much heavier screen-capture permission, so dark/light system theme is
+ *   used as an approximation.
+ * - If the user picked a photo for the island, that photo is shown instead
+ *   of a solid colour.
+ */
+class OverlayService : Service() {
+
+    private var windowManager: WindowManager? = null
+    private var islandView: View? = null
+    private var layoutParams: WindowManager.LayoutParams? = null
+    private var cutoutRect: Rect? = null
+
+    private val prefsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        when (key) {
+            Prefs.KEY_WIDTH, Prefs.KEY_HEIGHT, Prefs.KEY_RADIUS, Prefs.KEY_TOP_OFFSET,
+            Prefs.KEY_THEME, Prefs.KEY_AUTO_CONTRAST, Prefs.KEY_IMAGE_PATH -> updateIslandLayout()
+            Prefs.KEY_OVERLAY_ON -> {
+                if (!Prefs.isOverlayOn(this)) stopSelf()
+            }
+        }
+    }
+
+    override fun onCreate() {
+        super.onCreate()
+        startInForeground()
+
+        if (!Settings.canDrawOverlays(this)) {
+            // No permission (revoked while service was running) -> bail out safely.
+            stopSelf()
+            return
+        }
+
+        windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        addIslandView()
+
+        Prefs.prefs(this).registerOnSharedPreferenceChangeListener(prefsListener)
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // Sticky: if Android kills the process, try to restore the overlay.
+        return START_STICKY
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        Prefs.prefs(this).unregisterOnSharedPreferenceChangeListener(prefsListener)
+        removeIslandView()
+    }
+
+    override fun onBind(intent: Intent?): IBinder? = null
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        // Covers rotation and light/dark theme switches: re-evaluate both the
+        // cutout position and the pill colour.
+        updateIslandLayout()
+    }
+
+    // ---- overlay view -------------------------------------------------
+
+    private fun dp(value: Int): Int = TypedValue.applyDimension(
+        TypedValue.COMPLEX_UNIT_DIP, value.toFloat(), resources.displayMetrics
+    ).toInt()
+
+    private fun currentPillColor(): Int {
+        if (!Prefs.isAutoContrastOn(this)) return android.graphics.Color.BLACK
+        val nightModeActive = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+            Configuration.UI_MODE_NIGHT_YES
+        return if (nightModeActive) Prefs.getTheme(this).primaryArgb else android.graphics.Color.BLACK
+    }
+
+    private fun buildPillBackground(radiusDp: Int, widthPx: Int, heightPx: Int): Drawable {
+        val imagePath = Prefs.getImagePath(this)
+        if (imagePath != null) {
+            val file = File(imagePath)
+            if (file.exists()) {
+                val bitmap = decodeScaledBitmap(file, widthPx, heightPx)
+                if (bitmap != null) {
+                    return RoundedBitmapDrawableFactory.create(resources, bitmap).apply {
+                        cornerRadius = dp(radiusDp).toFloat()
+                        isCircular = false
+                    }
+                }
+            }
+        }
+        return GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            setColor(currentPillColor())
+            cornerRadius = dp(radiusDp).toFloat()
+        }
+    }
+
+    /** Downsamples the picked image so we don't decode a huge bitmap for a tiny pill. */
+    private fun decodeScaledBitmap(file: File, targetWidth: Int, targetHeight: Int): Bitmap? {
+        return try {
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(file.absolutePath, bounds)
+            var sample = 1
+            while (bounds.outWidth / (sample * 2) >= targetWidth &&
+                bounds.outHeight / (sample * 2) >= targetHeight
+            ) {
+                sample *= 2
+            }
+            val opts = BitmapFactory.Options().apply { inSampleSize = sample }
+            BitmapFactory.decodeFile(file.absolutePath, opts)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun overlayType(): Int =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+        else
+            @Suppress("DEPRECATION")
+            WindowManager.LayoutParams.TYPE_PHONE
+
+    private fun addIslandView() {
+        if (islandView != null) return
+
+        val view = View(this)
+        val widthPx = dp(Prefs.getWidth(this))
+        val heightPx = dp(Prefs.getHeight(this))
+        val radiusDp = Prefs.getRadius(this)
+
+        view.background = buildPillBackground(radiusDp, widthPx, heightPx)
+
+        val params = WindowManager.LayoutParams(
+            widthPx,
+            heightPx,
+            overlayType(),
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+            y = dp(Prefs.getTopOffset(this@OverlayService))
+        }
+
+        try {
+            windowManager?.addView(view, params)
+            islandView = view
+            layoutParams = params
+
+            // Whenever insets are (re)delivered — including on rotation —
+            // grab the camera cutout's bounds and anchor the pill to it.
+            ViewCompat.setOnApplyWindowInsetsListener(view) { _, insets ->
+                cutoutRect = insets.displayCutout?.boundingRectTop?.takeIf { !it.isEmpty }
+                applyPositioning()
+                insets
+            }
+        } catch (_: Exception) {
+            // Permission could have been revoked between the check and the call.
+            stopSelf()
+        }
+    }
+
+    /** Re-centers the pill on the camera cutout if we know where it is, otherwise top-center. */
+    private fun applyPositioning() {
+        val view = islandView ?: return
+        val params = layoutParams ?: return
+        val rect = cutoutRect
+        val topOffsetPx = dp(Prefs.getTopOffset(this))
+
+        if (rect != null) {
+            params.gravity = Gravity.TOP or Gravity.START
+            params.x = rect.centerX() - (params.width / 2)
+            params.y = rect.bottom + topOffsetPx
+        } else {
+            params.gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+            params.x = 0
+            params.y = topOffsetPx
+        }
+
+        try {
+            windowManager?.updateViewLayout(view, params)
+        } catch (_: Exception) {
+            // View might already be detached; ignore.
+        }
+    }
+
+    private fun updateIslandLayout() {
+        val view = islandView ?: return
+        val params = layoutParams ?: return
+
+        val widthPx = dp(Prefs.getWidth(this))
+        val heightPx = dp(Prefs.getHeight(this))
+        val radiusDp = Prefs.getRadius(this)
+
+        view.background = buildPillBackground(radiusDp, widthPx, heightPx)
+        params.width = widthPx
+        params.height = heightPx
+
+        try {
+            windowManager?.updateViewLayout(view, params)
+        } catch (_: Exception) {
+            // View might already be detached; ignore.
+        }
+        applyPositioning()
+    }
+
+    private fun removeIslandView() {
+        val view = islandView ?: return
+        try {
+            windowManager?.removeView(view)
+        } catch (_: Exception) {
+            // Already removed.
+        }
+        islandView = null
+        layoutParams = null
+    }
+
+    // ---- foreground notification --------------------------------------
+
+    private fun startInForeground() {
+        val channelId = "always_hyper_overlay"
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            val channel = NotificationChannel(
+                channelId,
+                "Always Hyper",
+                NotificationManager.IMPORTANCE_MIN
+            ).apply {
+                description = "Держит остров активным поверх приложений"
+                setShowBadge(false)
+            }
+            manager.createNotificationChannel(channel)
+        }
+
+        val openAppIntent = packageManager.getLaunchIntentForPackage(packageName)
+        val pendingIntent = PendingIntent.getActivity(
+            this, 0, openAppIntent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        val notification = NotificationCompat.Builder(this, channelId)
+            .setContentTitle("Always Hyper")
+            .setContentText("Остров активен поверх приложений")
+            .setSmallIcon(android.R.drawable.presence_online)
+            .setPriority(NotificationCompat.PRIORITY_MIN)
+            .setOngoing(true)
+            .setContentIntent(pendingIntent)
+            .build()
+
+        if (Build.VERSION.SDK_INT >= 34) {
+            // API 34+ requires an explicit foreground service type matching the manifest.
+            startForeground(
+                1,
+                notification,
+                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+            )
+        } else {
+            startForeground(1, notification)
+        }
+    }
+
+    companion object {
+        fun start(context: Context) {
+            val intent = Intent(context, OverlayService::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(intent)
+            } else {
+                context.startService(intent)
+            }
+        }
+
+        fun stop(context: Context) {
+            context.stopService(Intent(context, OverlayService::class.java))
+        }
+    }
+}

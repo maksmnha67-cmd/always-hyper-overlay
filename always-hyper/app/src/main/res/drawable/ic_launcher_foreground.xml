@@ -1,0 +1,8 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Intentionally empty: the launcher icon is just the flat background
+         colour (see ic_launcher_background.xml), no avatar/mark on top. -->
+</vector>
