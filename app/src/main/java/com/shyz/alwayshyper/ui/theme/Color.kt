@@ -12,4 +12,4 @@ val TextPrimary = Color(0xFFFFFFFF)
 val TextSecondary = Color(0xFF8E8E93)  // iOS secondaryLabel
 val TextTertiary = Color(0xFF636366)   // iOS tertiaryLabel
 val ThumbDisabled = Color(0xFF48484A)
-val NavBg = Color(0xE6161618)
+val NavBg = Color(0xB31C1C1E)

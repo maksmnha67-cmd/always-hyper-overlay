@@ -584,6 +584,11 @@ private fun PhoneMock(
                         .height(pillHeight)
                         .clip(RoundedCornerShape((radiusDp.coerceIn(0f, 16f) * 0.6f).dp))
                         .background(Color.Black)
+                        .border(
+                            width = 0.5.dp,
+                            color = Color(0xFF4D4D4F),
+                            shape = RoundedCornerShape((radiusDp.coerceIn(0f, 16f) * 0.6f).dp)
+                        )
                 )
             }
         }
@@ -640,15 +645,20 @@ private fun BottomNav(
 @Composable
 private fun FrostedHighlight(modifier: Modifier = Modifier) {
     val blurModifier = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-        Modifier.graphicsLayer { renderEffect = blurRenderEffect(28f) }
+        Modifier.graphicsLayer { renderEffect = blurRenderEffect(36f) }
     } else {
         Modifier
     }
     Canvas(modifier = modifier.then(blurModifier)) {
         drawCircle(
-            color = Color.White.copy(alpha = 0.05f),
-            radius = size.height * 1.8f,
-            center = Offset(size.width * 0.2f, 0f)
+            color = Color.White.copy(alpha = 0.16f),
+            radius = size.height * 1.6f,
+            center = Offset(size.width * 0.15f, -size.height * 0.3f)
+        )
+        drawCircle(
+            color = Color.White.copy(alpha = 0.10f),
+            radius = size.height * 1.4f,
+            center = Offset(size.width * 0.9f, size.height * 1.1f)
         )
     }
 }

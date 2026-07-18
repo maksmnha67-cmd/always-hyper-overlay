@@ -104,6 +104,10 @@ class OverlayService : Service() {
             shape = GradientDrawable.RECTANGLE
             setColor(android.graphics.Color.BLACK)
             cornerRadius = dp(radiusDp).toFloat()
+            // A subtle gray outline so the pill is still visible when the
+            // app behind it is also black — otherwise it would vanish
+            // completely against a black background.
+            setStroke(dp(1), android.graphics.Color.parseColor("#4D4D4F"))
         }
     }
 
