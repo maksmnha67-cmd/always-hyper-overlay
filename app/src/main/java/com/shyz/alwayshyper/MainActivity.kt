@@ -10,6 +10,11 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -18,6 +23,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -417,16 +424,32 @@ private fun AppearanceTab(
 
     SectionHeader("Запись экрана")
     Section {
+        val recordingInteraction = remember { MutableInteractionSource() }
+        val recordingPressed by recordingInteraction.collectIsPressedAsState()
+        val recordingScale by animateFloatAsState(
+            targetValue = if (recordingPressed) 0.97f else 1f,
+            animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessHigh),
+            label = "recordingButtonScale"
+        )
+        val recordingTextColor by animateColorAsState(
+            targetValue = if (isRecording) DestructiveRed else AccentBlue,
+            animationSpec = tween(220),
+            label = "recordingButtonColor"
+        )
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { if (isRecording) onStopRecording() else onStartRecording() }
+                .graphicsLayer { scaleX = recordingScale; scaleY = recordingScale }
+                .clickable(
+                    interactionSource = recordingInteraction,
+                    indication = null
+                ) { if (isRecording) onStopRecording() else onStartRecording() }
                 .padding(horizontal = 16.dp, vertical = 14.dp),
             horizontalArrangement = Arrangement.Center
         ) {
             Text(
                 text = if (isRecording) "Остановить запись" else "Начать запись экрана",
-                color = if (isRecording) DestructiveRed else AccentBlue,
+                color = recordingTextColor,
                 fontSize = 16.sp,
                 fontWeight = FontWeight.Medium
             )
@@ -476,17 +499,27 @@ private fun InfoRow(label: String, value: String) {
 
 @Composable
 private fun IslandToggle(checked: Boolean, onChange: (Boolean) -> Unit) {
+    val trackColor by animateColorAsState(
+        targetValue = if (checked) AccentBlue else ThumbDisabled,
+        animationSpec = tween(180),
+        label = "toggleTrackColor"
+    )
+    val thumbOffset by animateDpAsState(
+        targetValue = if (checked) 20.dp else 0.dp,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMediumLow),
+        label = "toggleThumbOffset"
+    )
     Box(
         modifier = Modifier
             .size(width = 51.dp, height = 31.dp)
             .clip(RoundedCornerShape(50))
-            .background(if (checked) AccentBlue else ThumbDisabled)
-            .clickable { onChange(!checked) },
-        contentAlignment = if (checked) Alignment.CenterEnd else Alignment.CenterStart
+            .background(trackColor)
+            .clickable { onChange(!checked) }
     ) {
         Box(
             modifier = Modifier
-                .padding(horizontal = 3.dp)
+                .padding(start = 3.dp, top = 3.dp)
+                .offset(x = thumbOffset)
                 .size(25.dp)
                 .clip(RoundedCornerShape(50))
                 .background(Color.White)
@@ -549,9 +582,32 @@ private fun PhoneMock(
     onSelect: () -> Unit
 ) {
     val outlineColor = Color(0xFF4D4D4F)
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val pressScale by animateFloatAsState(
+        targetValue = if (isPressed) 0.95f else 1f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessHigh),
+        label = "phoneMockScale"
+    )
+    val borderColor by animateColorAsState(
+        targetValue = if (active) AccentBlue else RowDivider,
+        animationSpec = tween(220),
+        label = "phoneMockBorderColor"
+    )
+    val borderWidth by animateDpAsState(
+        targetValue = if (active) 2.dp else 1.dp,
+        animationSpec = tween(220),
+        label = "phoneMockBorderWidth"
+    )
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.clickable { onSelect() }
+        modifier = Modifier
+            .graphicsLayer { scaleX = pressScale; scaleY = pressScale }
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onSelect
+            )
     ) {
         Box(
             modifier = Modifier
@@ -559,8 +615,8 @@ private fun PhoneMock(
                 .clip(RoundedCornerShape(28.dp))
                 .background(Color(0xFF0B0B0C))
                 .border(
-                    width = if (active) 2.dp else 1.dp,
-                    color = if (active) AccentBlue else RowDivider,
+                    width = borderWidth,
+                    color = borderColor,
                     shape = RoundedCornerShape(28.dp)
                 ),
             contentAlignment = Alignment.TopCenter
@@ -577,19 +633,27 @@ private fun PhoneMock(
             } else {
                 val widthFraction = ((widthDp - WIDTH_MIN) / (WIDTH_MAX - WIDTH_MIN)).coerceIn(0f, 1f)
                 val heightFraction = ((heightDp - HEIGHT_MIN) / (HEIGHT_MAX - HEIGHT_MIN)).coerceIn(0f, 1f)
-                val pillWidth: Dp = (PREVIEW_PILL_MIN + widthFraction * (PREVIEW_PILL_MAX - PREVIEW_PILL_MIN)).dp
-                val pillHeight: Dp = (PREVIEW_HEIGHT_MIN + heightFraction * (PREVIEW_HEIGHT_MAX - PREVIEW_HEIGHT_MIN)).dp
+                val targetPillWidth: Dp = (PREVIEW_PILL_MIN + widthFraction * (PREVIEW_PILL_MAX - PREVIEW_PILL_MIN)).dp
+                val targetPillHeight: Dp = (PREVIEW_HEIGHT_MIN + heightFraction * (PREVIEW_HEIGHT_MAX - PREVIEW_HEIGHT_MIN)).dp
+                val pillWidth by animateDpAsState(targetPillWidth, tween(180), label = "pillWidth")
+                val pillHeight by animateDpAsState(targetPillHeight, tween(180), label = "pillHeight")
+                val pillTopOffset by animateDpAsState(
+                    topOffsetDp.coerceIn(2f, 34f).dp, tween(180), label = "pillTopOffset"
+                )
+                val pillRadius by animateDpAsState(
+                    (radiusDp.coerceIn(0f, 16f) * 0.6f).dp, tween(180), label = "pillRadius"
+                )
                 Box(
                     modifier = Modifier
-                        .padding(top = topOffsetDp.coerceIn(2f, 34f).dp)
+                        .padding(top = pillTopOffset)
                         .width(pillWidth)
                         .height(pillHeight)
-                        .clip(RoundedCornerShape((radiusDp.coerceIn(0f, 16f) * 0.6f).dp))
+                        .clip(RoundedCornerShape(pillRadius))
                         .background(Color.Black)
                         .border(
                             width = 0.5.dp,
                             color = outlineColor,
-                            shape = RoundedCornerShape((radiusDp.coerceIn(0f, 16f) * 0.6f).dp)
+                            shape = RoundedCornerShape(pillRadius)
                         )
                 )
             }
@@ -678,22 +742,39 @@ private fun NavItem(
     active: Boolean,
     onClick: () -> Unit
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.88f else 1f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessHigh),
+        label = "navItemScale"
+    )
+    val tint by animateColorAsState(
+        targetValue = if (active) AccentBlue else TextSecondary,
+        animationSpec = tween(200),
+        label = "navItemColor"
+    )
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
-            .clickable { onClick() }
+            .graphicsLayer { scaleX = scale; scaleY = scale }
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick
+            )
             .padding(horizontal = 24.dp, vertical = 6.dp)
     ) {
         Icon(
             icon,
             contentDescription = label,
-            tint = if (active) AccentBlue else TextSecondary,
+            tint = tint,
             modifier = Modifier.size(24.dp)
         )
         Spacer(modifier = Modifier.height(3.dp))
         Text(
             label,
-            color = if (active) AccentBlue else TextSecondary,
+            color = tint,
             fontSize = 10.sp,
             fontWeight = FontWeight.Medium
         )

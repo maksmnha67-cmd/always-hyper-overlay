@@ -43,6 +43,7 @@ class OverlayService : Service() {
     private var islandContainer: FrameLayout? = null
     private var pillView: View? = null
     private var recordingDot: View? = null
+    private var recordingPulseAnimator: android.animation.ObjectAnimator? = null
     private var layoutParams: WindowManager.LayoutParams? = null
     private var cutoutRect: Rect? = null
 
@@ -198,10 +199,26 @@ class OverlayService : Service() {
         }
     }
 
-    /** Shows/hides the small red recording dot without touching size or position. */
+    /** Shows/hides the small red recording dot, with a gentle pulse while recording. */
     private fun updateRecordingDot() {
         val dot = recordingDot ?: return
-        dot.visibility = if (Prefs.isRecordingActive(this)) View.VISIBLE else View.GONE
+        if (Prefs.isRecordingActive(this)) {
+            dot.visibility = View.VISIBLE
+            if (recordingPulseAnimator == null) {
+                dot.alpha = 1f
+                recordingPulseAnimator = android.animation.ObjectAnimator.ofFloat(dot, View.ALPHA, 1f, 0.35f).apply {
+                    duration = 700
+                    repeatMode = android.animation.ValueAnimator.REVERSE
+                    repeatCount = android.animation.ValueAnimator.INFINITE
+                    start()
+                }
+            }
+        } else {
+            recordingPulseAnimator?.cancel()
+            recordingPulseAnimator = null
+            dot.alpha = 1f
+            dot.visibility = View.GONE
+        }
     }
 
     /** Re-centers the pill on the camera cutout if we know where it is, otherwise top-center. */
@@ -261,6 +278,8 @@ class OverlayService : Service() {
 
     private fun removeIslandView() {
         val container = islandContainer ?: return
+        recordingPulseAnimator?.cancel()
+        recordingPulseAnimator = null
         try {
             windowManager?.removeView(container)
         } catch (_: Exception) {
