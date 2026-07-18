@@ -56,6 +56,7 @@ class OverlayService : Service() {
                 updateRecordingDot()
                 updateIslandLayout()
             }
+            Prefs.KEY_FOREGROUND_FULLSCREEN -> updateVisibility()
             Prefs.KEY_OVERLAY_ON -> {
                 if (!Prefs.isOverlayOn(this)) stopSelf()
             }
@@ -182,6 +183,7 @@ class OverlayService : Service() {
             windowManager?.addView(container, params)
             layoutParams = params
             updateRecordingDot()
+            updateVisibility()
 
             // Whenever insets are (re)delivered — including on rotation —
             // grab the camera cutout's bounds and anchor the pill to it.
@@ -219,6 +221,18 @@ class OverlayService : Service() {
             dot.alpha = 1f
             dot.visibility = View.GONE
         }
+    }
+
+    /**
+     * Hides the whole island whenever the foreground app is fullscreen /
+     * immersive — same as the system status bar (battery %, clock). Only
+     * does anything if the optional accessibility service is enabled; if
+     * it isn't, the fullscreen signal never flips and the island just stays
+     * visible as before.
+     */
+    private fun updateVisibility() {
+        val container = islandContainer ?: return
+        container.visibility = if (Prefs.isForegroundFullscreen(this)) View.GONE else View.VISIBLE
     }
 
     /** Re-centers the pill on the camera cutout if we know where it is, otherwise top-center. */

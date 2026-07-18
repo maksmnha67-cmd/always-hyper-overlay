@@ -58,6 +58,17 @@ import com.shyz.alwayshyper.ui.theme.*
 
 private enum class Tab(val label: String) { APPEARANCE("Вид"), ABOUT("О приложении") }
 
+/** Checks whether the user has enabled OverlayAccessibilityService in system settings. */
+private fun isAccessibilityServiceEnabled(context: android.content.Context): Boolean {
+    val expected = android.content.ComponentName(context, OverlayAccessibilityService::class.java)
+        .flattenToString()
+    val enabledServices = Settings.Secure.getString(
+        context.contentResolver,
+        Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+    ) ?: return false
+    return enabledServices.split(':').any { it.equals(expected, ignoreCase = true) }
+}
+
 // Real, on-screen overlay width/height range (dp). Each device/screen is
 // different, so this is intentionally generous — the phone mockup below
 // re-maps it into a safe preview range so it never overflows the mockup box.
@@ -105,6 +116,7 @@ private fun AlwaysHyperApp(requestOverlayPermission: () -> Unit) {
     var radius by remember { mutableFloatStateOf(Prefs.getRadius(context).toFloat()) }
     var topOffset by remember { mutableFloatStateOf(Prefs.getTopOffset(context).toFloat()) }
     var isRecording by remember { mutableStateOf(Prefs.isRecordingActive(context)) }
+    var accessibilityEnabled by remember { mutableStateOf(isAccessibilityServiceEnabled(context)) }
 
     // Recording can be stopped from outside this screen (the Quick Settings
     // tile, the notification's "Стоп" button, or the system's own recording
@@ -133,6 +145,13 @@ private fun AlwaysHyperApp(requestOverlayPermission: () -> Unit) {
         isRecording = false
     }
 
+    fun onOpenAccessibilitySettings() {
+        context.startActivity(
+            Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
+    }
+
     // Re-check the system permission whenever we come back to the foreground
     // (e.g. after the user grants/denies it in Settings).
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -148,6 +167,7 @@ private fun AlwaysHyperApp(requestOverlayPermission: () -> Unit) {
                     Prefs.setOverlayOn(context, false)
                 }
                 isRecording = Prefs.isRecordingActive(context)
+                accessibilityEnabled = isAccessibilityServiceEnabled(context)
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -205,6 +225,7 @@ private fun AlwaysHyperApp(requestOverlayPermission: () -> Unit) {
                                 radius = radius,
                                 topOffset = topOffset,
                                 isRecording = isRecording,
+                                accessibilityEnabled = accessibilityEnabled,
                                 onOverlayToggle = ::onToggleOverlay,
                                 onWidthChange = {
                                     width = it
@@ -223,7 +244,8 @@ private fun AlwaysHyperApp(requestOverlayPermission: () -> Unit) {
                                     Prefs.setTopOffset(context, it.toInt())
                                 },
                                 onStartRecording = ::onStartRecording,
-                                onStopRecording = ::onStopRecording
+                                onStopRecording = ::onStopRecording,
+                                onOpenAccessibilitySettings = ::onOpenAccessibilitySettings
                             )
                             Tab.ABOUT -> AboutTab()
                         }
@@ -325,13 +347,15 @@ private fun AppearanceTab(
     radius: Float,
     topOffset: Float,
     isRecording: Boolean,
+    accessibilityEnabled: Boolean,
     onOverlayToggle: (Boolean) -> Unit,
     onWidthChange: (Float) -> Unit,
     onHeightChange: (Float) -> Unit,
     onRadiusChange: (Float) -> Unit,
     onTopOffsetChange: (Float) -> Unit,
     onStartRecording: () -> Unit,
-    onStopRecording: () -> Unit
+    onStopRecording: () -> Unit,
+    onOpenAccessibilitySettings: () -> Unit
 ) {
     SectionHeader("Предпросмотр")
     Section {
@@ -416,11 +440,27 @@ private fun AppearanceTab(
         )
     }
     SectionFooter(
-        if (overlayOn)
-            "Остров остаётся видимым постоянно, даже когда экран заблокирован."
+        (if (overlayOn)
+            "Остров остаётся видимым постоянно, даже когда экран заблокирован. "
         else
-            "В классическом режиме показывается только вырез камеры."
+            "В классическом режиме показывается только вырез камеры. ") +
+            "Прячется вместе со статус-баром в полноэкранных приложениях (видео, игры)."
     )
+    if (!accessibilityEnabled) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 16.dp, end = 16.dp, top = 4.dp)
+        ) {
+            Text(
+                text = "Чтобы это работало, один раз включи специальную службу в настройках →",
+                color = AccentBlue,
+                fontSize = 12.sp,
+                lineHeight = 16.sp,
+                modifier = Modifier.clickable { onOpenAccessibilitySettings() }
+            )
+        }
+    }
 
     SectionHeader("Запись экрана")
     Section {
