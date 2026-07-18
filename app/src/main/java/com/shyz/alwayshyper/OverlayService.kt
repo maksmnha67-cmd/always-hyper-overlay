@@ -51,7 +51,10 @@ class OverlayService : Service() {
     private val prefsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         when (key) {
             Prefs.KEY_WIDTH, Prefs.KEY_HEIGHT, Prefs.KEY_RADIUS, Prefs.KEY_TOP_OFFSET -> updateIslandLayout()
-            Prefs.KEY_IS_RECORDING -> updateRecordingDot()
+            Prefs.KEY_IS_RECORDING -> {
+                updateRecordingDot()
+                updateIslandLayout()
+            }
             Prefs.KEY_OVERLAY_ON -> {
                 if (!Prefs.isOverlayOn(this)) stopSelf()
             }
@@ -104,10 +107,15 @@ class OverlayService : Service() {
             shape = GradientDrawable.RECTANGLE
             setColor(android.graphics.Color.BLACK)
             cornerRadius = dp(radiusDp).toFloat()
-            // A subtle gray outline so the pill is still visible when the
-            // app behind it is also black — otherwise it would vanish
-            // completely against a black background.
-            setStroke(dp(1), android.graphics.Color.parseColor("#4D4D4F"))
+            // A subtle outline so the pill is still visible when the app
+            // behind it is also black — gray normally, red while recording
+            // (matching the little red dot) so it doubles as a recording cue.
+            val outlineColor = if (Prefs.isRecordingActive(this@OverlayService)) {
+                recordingColor
+            } else {
+                android.graphics.Color.parseColor("#4D4D4F")
+            }
+            setStroke(dp(1), outlineColor)
         }
     }
 

@@ -341,6 +341,7 @@ private fun AppearanceTab(
                 heightDp = height,
                 radiusDp = radius,
                 topOffsetDp = topOffset,
+                isRecording = isRecording,
                 label = "Классический",
                 onSelect = { onOverlayToggle(false) }
             )
@@ -351,6 +352,7 @@ private fun AppearanceTab(
                 heightDp = height,
                 radiusDp = radius,
                 topOffsetDp = topOffset,
+                isRecording = isRecording,
                 label = "Always-On",
                 onSelect = { onOverlayToggle(true) }
             )
@@ -545,9 +547,11 @@ private fun PhoneMock(
     heightDp: Float,
     radiusDp: Float,
     topOffsetDp: Float,
+    isRecording: Boolean,
     label: String,
     onSelect: () -> Unit
 ) {
+    val outlineColor = if (isRecording) DestructiveRed else Color(0xFF4D4D4F)
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier.clickable { onSelect() }
@@ -571,6 +575,7 @@ private fun PhoneMock(
                         .size(8.dp)
                         .clip(RoundedCornerShape(50))
                         .background(Color.Black)
+                        .border(width = 0.5.dp, color = outlineColor, shape = RoundedCornerShape(50))
                 )
             } else {
                 val widthFraction = ((widthDp - WIDTH_MIN) / (WIDTH_MAX - WIDTH_MIN)).coerceIn(0f, 1f)
@@ -586,7 +591,7 @@ private fun PhoneMock(
                         .background(Color.Black)
                         .border(
                             width = 0.5.dp,
-                            color = Color(0xFF4D4D4F),
+                            color = outlineColor,
                             shape = RoundedCornerShape((radiusDp.coerceIn(0f, 16f) * 0.6f).dp)
                         )
                 )
