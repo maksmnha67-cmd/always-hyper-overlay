@@ -341,7 +341,6 @@ private fun AppearanceTab(
                 heightDp = height,
                 radiusDp = radius,
                 topOffsetDp = topOffset,
-                isRecording = isRecording,
                 label = "Классический",
                 onSelect = { onOverlayToggle(false) }
             )
@@ -352,7 +351,6 @@ private fun AppearanceTab(
                 heightDp = height,
                 radiusDp = radius,
                 topOffsetDp = topOffset,
-                isRecording = isRecording,
                 label = "Always-On",
                 onSelect = { onOverlayToggle(true) }
             )
@@ -547,11 +545,10 @@ private fun PhoneMock(
     heightDp: Float,
     radiusDp: Float,
     topOffsetDp: Float,
-    isRecording: Boolean,
     label: String,
     onSelect: () -> Unit
 ) {
-    val outlineColor = if (isRecording) DestructiveRed else Color(0xFF4D4D4F)
+    val outlineColor = Color(0xFF4D4D4F)
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier.clickable { onSelect() }
