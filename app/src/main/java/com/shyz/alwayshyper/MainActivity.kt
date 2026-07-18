@@ -3,6 +3,7 @@ package com.shyz.alwayshyper
 import android.content.Intent
 import android.content.SharedPreferences
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
@@ -13,6 +14,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -32,7 +34,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asComposeRenderEffect
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -598,18 +603,22 @@ private fun BottomNav(
     onTabSelected: (Tab) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Column(modifier = modifier.fillMaxWidth()) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(0.5.dp)
-                .background(RowDivider)
-        )
+    Box(
+        modifier = modifier
+            .padding(horizontal = 24.dp, vertical = 20.dp)
+            .clip(RoundedCornerShape(26.dp))
+    ) {
+        // Real blur (API 31+), no-op below that — a subtle frosted-glass
+        // highlight sitting under the translucent bar. Compose can't sample
+        // pixels from behind a floating element without extra libraries, so
+        // this is a stylised approximation rather than a literal backdrop blur.
+        FrostedHighlight(modifier = Modifier.matchParentSize())
+
         Row(
             modifier = Modifier
-                .fillMaxWidth()
                 .background(NavBg)
-                .padding(top = 8.dp, bottom = 24.dp),
+                .border(1.dp, RowDivider.copy(alpha = 0.7f), RoundedCornerShape(26.dp))
+                .padding(vertical = 10.dp),
             horizontalArrangement = Arrangement.SpaceEvenly
         ) {
             NavItem(
@@ -627,6 +636,28 @@ private fun BottomNav(
         }
     }
 }
+
+@Composable
+private fun FrostedHighlight(modifier: Modifier = Modifier) {
+    val blurModifier = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        Modifier.graphicsLayer { renderEffect = blurRenderEffect(28f) }
+    } else {
+        Modifier
+    }
+    Canvas(modifier = modifier.then(blurModifier)) {
+        drawCircle(
+            color = Color.White.copy(alpha = 0.05f),
+            radius = size.height * 1.8f,
+            center = Offset(size.width * 0.2f, 0f)
+        )
+    }
+}
+
+@androidx.annotation.RequiresApi(Build.VERSION_CODES.S)
+private fun blurRenderEffect(radius: Float): androidx.compose.ui.graphics.RenderEffect =
+    android.graphics.RenderEffect
+        .createBlurEffect(radius, radius, android.graphics.Shader.TileMode.CLAMP)
+        .asComposeRenderEffect()
 
 @Composable
 private fun NavItem(
