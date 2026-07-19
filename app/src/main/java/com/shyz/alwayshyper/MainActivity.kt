@@ -60,13 +60,20 @@ private enum class Tab(val label: String) { APPEARANCE("Вид"), ABOUT("О пр
 
 /** Checks whether the user has enabled OverlayAccessibilityService in system settings. */
 private fun isAccessibilityServiceEnabled(context: android.content.Context): Boolean {
-    val expected = android.content.ComponentName(context, OverlayAccessibilityService::class.java)
-        .flattenToString()
     val enabledServices = Settings.Secure.getString(
         context.contentResolver,
         Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
     ) ?: return false
-    return enabledServices.split(':').any { it.equals(expected, ignoreCase = true) }
+    val packageName = context.packageName
+    val className = OverlayAccessibilityService::class.java.simpleName
+    // Some OEM skins (e.g. MIUI/HyperOS) don't store the exact fully-flattened
+    // "package/full.Class.Name" form we'd get from ComponentName, so an exact
+    // match can wrongly report "not enabled" even when it is. Checking that an
+    // entry mentions both our package and the service's simple class name is
+    // more forgiving and avoids that false negative.
+    return enabledServices.split(':').any { entry ->
+        entry.contains(packageName, ignoreCase = true) && entry.contains(className, ignoreCase = true)
+    }
 }
 
 // Real, on-screen overlay width/height range (dp). Each device/screen is

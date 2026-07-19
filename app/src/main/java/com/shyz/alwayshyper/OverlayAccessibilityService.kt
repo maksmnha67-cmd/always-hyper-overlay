@@ -41,31 +41,46 @@ class OverlayAccessibilityService : AccessibilityService() {
     private val checkRunnable = Runnable { evaluateAndMaybeApply() }
     private var lastCandidate: Boolean? = null
 
+    // Belt-and-braces fallback: some devices/apps don't fire the events we
+    // listen for when entering immersive mode. Re-checking every 400ms
+    // regardless catches those cases too, at negligible cost.
+    private val periodicCheckRunnable = object : Runnable {
+        override fun run() {
+            evaluateAndMaybeApply()
+            handler.postDelayed(this, 400)
+        }
+    }
+
     override fun onServiceConnected() {
         super.onServiceConnected()
         serviceInfo = AccessibilityServiceInfo().apply {
-            eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED or
-                AccessibilityEvent.TYPE_WINDOWS_CHANGED
+            // Listen to everything, not just window-state/windows-changed —
+            // on some devices/apps, entering immersive mode doesn't fire
+            // either of those specifically, but something always does.
+            eventTypes = AccessibilityEvent.TYPES_ALL_MASK
             feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
             flags = AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
             notificationTimeout = 100
         }
+        handler.post(periodicCheckRunnable)
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        // Collapse bursts of events into a single check, ~300ms after things
+        // Collapse bursts of events into a single check, ~150ms after things
         // settle down, instead of reacting to every single one.
         handler.removeCallbacks(checkRunnable)
-        handler.postDelayed(checkRunnable, 300)
+        handler.postDelayed(checkRunnable, 150)
     }
 
     override fun onInterrupt() {
         handler.removeCallbacks(checkRunnable)
+        handler.removeCallbacks(periodicCheckRunnable)
     }
 
     override fun onDestroy() {
         super.onDestroy()
         handler.removeCallbacks(checkRunnable)
+        handler.removeCallbacks(periodicCheckRunnable)
     }
 
     private fun evaluateAndMaybeApply() {
@@ -78,7 +93,7 @@ class OverlayAccessibilityService : AccessibilityService() {
             // a system animation. Remember it and check again shortly
             // before trusting it.
             lastCandidate = candidate
-            handler.postDelayed(checkRunnable, 300)
+            handler.postDelayed(checkRunnable, 150)
         }
     }
 
