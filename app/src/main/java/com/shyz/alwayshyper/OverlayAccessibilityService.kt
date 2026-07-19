@@ -17,21 +17,27 @@ import android.view.accessibility.AccessibilityEvent
  * Settings > Accessibility — Android does not allow apps to detect other
  * apps' fullscreen state any other way.
  *
- * Two things matter for a stable result:
+ * Three things matter for a stable, flicker-free result:
  * 1. The bar for "fullscreen" has to be strict. Modern Android apps draw
  *    edge-to-edge by default, so a window that merely starts at y=0 (top of
- *    screen) is normal, not a signal of immersive mode — nearly every app
- *    would trigger a naive "top <= 0" check. We instead require the window
- *    to cover the ENTIRE screen, top AND bottom, which only genuinely
- *    fullscreen/immersive content (video players, games) does.
- * 2. Events can arrive in rapid bursts for minor UI changes within the same
- *    app. Reacting to every single one causes visible flicker. We debounce:
- *    only the last event within a short window actually updates the state.
+ *    screen) is normal, not a signal of immersive mode. We require the
+ *    window to cover the ENTIRE screen, top AND bottom, which only
+ *    genuinely fullscreen/immersive content (video players, games) does.
+ * 2. Events can arrive in rapid bursts for minor UI changes. Reacting to
+ *    every single one causes visible flicker, so each burst is collapsed
+ *    into one delayed check.
+ * 3. Short system animations (e.g. closing the notification shade) can
+ *    briefly report an inconsistent, in-between window state — a single
+ *    delayed check can land exactly in that window and misfire for a
+ *    fraction of a second. To filter that out, a new value is only trusted
+ *    (written to Prefs) once it's been seen on two checks in a row; a
+ *    one-off blip that disappears on the next check never gets applied.
  */
 class OverlayAccessibilityService : AccessibilityService() {
 
     private val handler = Handler(Looper.getMainLooper())
-    private val debouncedCheck = Runnable { updateFullscreenState() }
+    private val checkRunnable = Runnable { evaluateAndMaybeApply() }
+    private var lastCandidate: Boolean? = null
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -45,32 +51,41 @@ class OverlayAccessibilityService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        // Collapse bursts of events into a single check, ~250ms after things
+        // Collapse bursts of events into a single check, ~300ms after things
         // settle down, instead of reacting to every single one.
-        handler.removeCallbacks(debouncedCheck)
-        handler.postDelayed(debouncedCheck, 250)
+        handler.removeCallbacks(checkRunnable)
+        handler.postDelayed(checkRunnable, 300)
     }
 
     override fun onInterrupt() {
-        handler.removeCallbacks(debouncedCheck)
+        handler.removeCallbacks(checkRunnable)
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        handler.removeCallbacks(debouncedCheck)
+        handler.removeCallbacks(checkRunnable)
     }
 
-    private fun updateFullscreenState() {
+    private fun evaluateAndMaybeApply() {
+        val candidate = computeIsFullscreen()
+        if (candidate == lastCandidate) {
+            // Same result two checks in a row -> trust it and apply.
+            Prefs.setForegroundFullscreen(this, candidate)
+        } else {
+            // First time seeing this value — could be a transient blip from
+            // a system animation (e.g. closing the notification shade).
+            // Remember it and check again shortly before trusting it.
+            lastCandidate = candidate
+            handler.postDelayed(checkRunnable, 300)
+        }
+    }
+
+    private fun computeIsFullscreen(): Boolean {
         val activeWindow = try {
             windows?.firstOrNull { it.isActive }
         } catch (_: Exception) {
             null
-        }
-
-        if (activeWindow == null) {
-            Prefs.setForegroundFullscreen(this, false)
-            return
-        }
+        } ?: return false
 
         val bounds = Rect()
         activeWindow.getBoundsInScreen(bounds)
@@ -80,7 +95,6 @@ class OverlayAccessibilityService : AccessibilityService() {
         // and bottom. A normal edge-to-edge app still stops short of the
         // very bottom (leaves room for the gesture/nav bar); only a truly
         // fullscreen video/game covers the whole thing.
-        val isFullscreen = bounds.top <= 0 && bounds.bottom >= screenHeight
-        Prefs.setForegroundFullscreen(this, isFullscreen)
+        return bounds.top <= 0 && bounds.bottom >= screenHeight
     }
 }
