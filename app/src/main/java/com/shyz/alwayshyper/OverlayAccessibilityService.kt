@@ -6,32 +6,34 @@ import android.graphics.Rect
 import android.os.Handler
 import android.os.Looper
 import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityWindowInfo
 
 /**
- * Detects whether the foreground app is currently drawn truly fullscreen /
- * immersive (e.g. a video player with the status bar hidden) so
- * OverlayService can hide the island along with the system status bar,
- * exactly like the battery percentage and clock do.
+ * Detects whether the system status bar is currently hidden (fullscreen /
+ * immersive mode — e.g. a video player or game) so OverlayService can hide
+ * the island right along with it, exactly like the battery percentage and
+ * clock do.
  *
  * This requires the user to manually enable this service once, in
  * Settings > Accessibility — Android does not allow apps to detect other
  * apps' fullscreen state any other way.
  *
- * Three things matter for a stable, flicker-free result:
- * 1. The bar for "fullscreen" has to be strict. Modern Android apps draw
- *    edge-to-edge by default, so a window that merely starts at y=0 (top of
- *    screen) is normal, not a signal of immersive mode. We require the
- *    window to cover the ENTIRE screen, top AND bottom, which only
- *    genuinely fullscreen/immersive content (video players, games) does.
- * 2. Events can arrive in rapid bursts for minor UI changes. Reacting to
+ * Earlier versions of this check inferred fullscreen from the foreground
+ * app's own window bounds, but that's unstable: video players show their
+ * own playback-control overlay for a second or two when tapped, which can
+ * shift those bounds and made the island flash on its own during normal
+ * viewing. Instead, this looks for the status bar's OWN system window
+ * (a thin strip pinned to the very top of the screen) — if it's present,
+ * the status bar is showing; if it's gone, the app has hidden it. That's
+ * unaffected by whatever UI the app itself shows or hides.
+ *
+ * Two more things keep this flicker-free:
+ * 1. Events can arrive in rapid bursts for minor UI changes. Reacting to
  *    every single one causes visible flicker, so each burst is collapsed
  *    into one delayed check.
- * 3. Short system animations (e.g. closing the notification shade) can
- *    briefly report an inconsistent, in-between window state — a single
- *    delayed check can land exactly in that window and misfire for a
- *    fraction of a second. To filter that out, a new value is only trusted
- *    (written to Prefs) once it's been seen on two checks in a row; a
- *    one-off blip that disappears on the next check never gets applied.
+ * 2. A new value is only trusted (written to Prefs) once it's been seen on
+ *    two checks in a row; a one-off blip from a system animation (e.g.
+ *    closing the notification shade) never gets applied.
  */
 class OverlayAccessibilityService : AccessibilityService() {
 
@@ -73,28 +75,31 @@ class OverlayAccessibilityService : AccessibilityService() {
             Prefs.setForegroundFullscreen(this, candidate)
         } else {
             // First time seeing this value — could be a transient blip from
-            // a system animation (e.g. closing the notification shade).
-            // Remember it and check again shortly before trusting it.
+            // a system animation. Remember it and check again shortly
+            // before trusting it.
             lastCandidate = candidate
             handler.postDelayed(checkRunnable, 300)
         }
     }
 
     private fun computeIsFullscreen(): Boolean {
-        val activeWindow = try {
-            windows?.firstOrNull { it.isActive }
+        val windowList = try {
+            windows
         } catch (_: Exception) {
             null
         } ?: return false
 
-        val bounds = Rect()
-        activeWindow.getBoundsInScreen(bounds)
+        val screenWidth = resources.displayMetrics.widthPixels
 
-        val screenHeight = resources.displayMetrics.heightPixels
-        // Require the window to cover the screen edge-to-edge on BOTH top
-        // and bottom. A normal edge-to-edge app still stops short of the
-        // very bottom (leaves room for the gesture/nav bar); only a truly
-        // fullscreen video/game covers the whole thing.
-        return bounds.top <= 0 && bounds.bottom >= screenHeight
+        val statusBarPresent = windowList.any { window ->
+            if (window.type != AccessibilityWindowInfo.TYPE_SYSTEM) return@any false
+            val bounds = Rect()
+            window.getBoundsInScreen(bounds)
+            // The status bar is a thin strip pinned to the very top,
+            // spanning almost the full screen width.
+            bounds.top <= 0 && bounds.height() in 1..200 && bounds.width() >= screenWidth * 0.9
+        }
+
+        return !statusBarPresent
     }
 }
