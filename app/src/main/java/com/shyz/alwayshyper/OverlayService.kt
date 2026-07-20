@@ -21,6 +21,7 @@ import android.view.WindowManager
 import android.widget.FrameLayout
 import androidx.core.app.NotificationCompat
 import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 
 /**
  * Keeps a small black pill ("island") attached near the front camera, above
@@ -33,6 +34,10 @@ import androidx.core.view.ViewCompat
  *   camera regardless of screen rotation. If no cutout is reported (or on
  *   API < 28, before DisplayCutout existed), it falls back to a simple
  *   top-center position.
+ * - The island hides/shows in real time together with the system status bar
+ *   (e.g. in fullscreen video/games), using the same WindowInsets callback
+ *   any window gets when system bar visibility changes — no extra
+ *   permission, no polling, no delay.
  * - While our own screen recording (RecordingService) is active, a small red
  *   dot lights up on the side of the pill — like the iOS recording
  *   indicator — instead of tinting the whole pill red.
@@ -56,7 +61,6 @@ class OverlayService : Service() {
                 updateRecordingDot()
                 updateIslandLayout()
             }
-            Prefs.KEY_FOREGROUND_FULLSCREEN -> updateVisibility()
             Prefs.KEY_OVERLAY_ON -> {
                 if (!Prefs.isOverlayOn(this)) stopSelf()
             }
@@ -183,16 +187,23 @@ class OverlayService : Service() {
             windowManager?.addView(container, params)
             layoutParams = params
             updateRecordingDot()
-            updateVisibility()
 
-            // Whenever insets are (re)delivered — including on rotation —
-            // grab the camera cutout's bounds and anchor the pill to it.
+            // Whenever insets are (re)delivered — including on rotation, and
+            // whenever ANY app shows/hides the status bar — this fires
+            // immediately with the system's own up-to-date state. No polling,
+            // no permissions, no delay: it's the same signal the status bar
+            // itself uses, so the island disappears/reappears in lockstep
+            // with the real percentage/clock, not on some approximation of it.
             // (DisplayCutoutCompat only exposes the plural boundingRects list,
             // not per-side getters like the platform DisplayCutout class does.)
             ViewCompat.setOnApplyWindowInsetsListener(container) { _, insets ->
                 val rects = insets.displayCutout?.boundingRects
                 cutoutRect = rects?.firstOrNull { !it.isEmpty }
                 applyPositioning()
+
+                val statusBarVisible = insets.isVisible(WindowInsetsCompat.Type.statusBars())
+                container.visibility = if (statusBarVisible) View.VISIBLE else View.GONE
+
                 insets
             }
         } catch (_: Exception) {
@@ -221,18 +232,6 @@ class OverlayService : Service() {
             dot.alpha = 1f
             dot.visibility = View.GONE
         }
-    }
-
-    /**
-     * Hides the whole island whenever the foreground app is fullscreen /
-     * immersive — same as the system status bar (battery %, clock). Only
-     * does anything if the optional accessibility service is enabled; if
-     * it isn't, the fullscreen signal never flips and the island just stays
-     * visible as before.
-     */
-    private fun updateVisibility() {
-        val container = islandContainer ?: return
-        container.visibility = if (Prefs.isForegroundFullscreen(this)) View.GONE else View.VISIBLE
     }
 
     /** Re-centers the pill on the camera cutout if we know where it is, otherwise top-center. */

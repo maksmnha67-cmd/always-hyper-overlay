@@ -18,8 +18,6 @@ object Prefs {
     const val KEY_TOP_OFFSET = "top_offset"
     /** Runtime signal: true while RecordingService is actively recording the screen. */
     const val KEY_IS_RECORDING = "is_recording"
-    /** Runtime signal written by OverlayAccessibilityService: true when the foreground app is fullscreen/immersive. */
-    const val KEY_FOREGROUND_FULLSCREEN = "foreground_fullscreen"
 
     const val DEFAULT_WIDTH = 90
     const val DEFAULT_HEIGHT = 28
@@ -70,14 +68,5 @@ object Prefs {
 
     fun setRecordingActive(context: Context, value: Boolean) {
         prefs(context).edit().putBoolean(KEY_IS_RECORDING, value).apply()
-    }
-
-    /** Written by OverlayAccessibilityService whenever the foreground app's fullscreen state changes. */
-    fun isForegroundFullscreen(context: Context): Boolean =
-        prefs(context).getBoolean(KEY_FOREGROUND_FULLSCREEN, false)
-
-    fun setForegroundFullscreen(context: Context, value: Boolean) {
-        if (isForegroundFullscreen(context) == value) return
-        prefs(context).edit().putBoolean(KEY_FOREGROUND_FULLSCREEN, value).apply()
     }
 }

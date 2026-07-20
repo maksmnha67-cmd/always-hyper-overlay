@@ -1,4 +1,3 @@
 <resources>
     <string name="app_name">Always Hyper</string>
-    <string name="accessibility_service_description">Позволяет Always Hyper определять, когда текущее приложение переходит в полноэкранный режим, чтобы прятать остров вместе со статус-баром — как проценты заряда и время. Не читает и не собирает содержимое экрана.</string>
 </resources>
