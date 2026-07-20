@@ -56,7 +56,8 @@ class OverlayService : Service() {
 
     private val prefsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         when (key) {
-            Prefs.KEY_WIDTH, Prefs.KEY_HEIGHT, Prefs.KEY_RADIUS, Prefs.KEY_TOP_OFFSET -> updateIslandLayout()
+            Prefs.KEY_WIDTH, Prefs.KEY_HEIGHT, Prefs.KEY_RADIUS,
+            Prefs.KEY_TOP_OFFSET, Prefs.KEY_ANCHOR_TO_CAMERA -> updateIslandLayout()
             Prefs.KEY_IS_RECORDING -> {
                 updateRecordingDot()
                 updateIslandLayout()
@@ -181,6 +182,14 @@ class OverlayService : Service() {
         ).apply {
             gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
             y = dp(Prefs.getTopOffset(this@OverlayService))
+            // By default, Android only reports the camera cutout in
+            // portrait — in landscape it's hidden unless a window asks for
+            // it explicitly. Without this, rotating to landscape made the
+            // cutout info disappear and the island fell back to plain
+            // top-center, which looked like it "jumped" away from the camera.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+            }
         }
 
         try {
@@ -234,11 +243,11 @@ class OverlayService : Service() {
         }
     }
 
-    /** Re-centers the pill on the camera cutout if we know where it is, otherwise top-center. */
+    /** Re-centers the pill on the camera cutout if we know where it is and the user wants that, otherwise top-center. */
     private fun applyPositioning() {
         val container = islandContainer ?: return
         val params = layoutParams ?: return
-        val rect = cutoutRect
+        val rect = if (Prefs.isAnchorToCameraOn(this)) cutoutRect else null
         val topOffsetPx = dp(Prefs.getTopOffset(this))
 
         if (rect != null) {

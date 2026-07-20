@@ -18,6 +18,8 @@ object Prefs {
     const val KEY_TOP_OFFSET = "top_offset"
     /** Runtime signal: true while RecordingService is actively recording the screen. */
     const val KEY_IS_RECORDING = "is_recording"
+    /** User toggle: keep the island anchored to the real camera cutout instead of a fixed top-center position. */
+    const val KEY_ANCHOR_TO_CAMERA = "anchor_to_camera"
 
     const val DEFAULT_WIDTH = 90
     const val DEFAULT_HEIGHT = 28
@@ -68,5 +70,13 @@ object Prefs {
 
     fun setRecordingActive(context: Context, value: Boolean) {
         prefs(context).edit().putBoolean(KEY_IS_RECORDING, value).apply()
+    }
+
+    /** On by default: the island tracks the real camera cutout position. */
+    fun isAnchorToCameraOn(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_ANCHOR_TO_CAMERA, true)
+
+    fun setAnchorToCameraOn(context: Context, value: Boolean) {
+        prefs(context).edit().putBoolean(KEY_ANCHOR_TO_CAMERA, value).apply()
     }
 }

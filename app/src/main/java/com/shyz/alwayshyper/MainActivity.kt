@@ -105,6 +105,7 @@ private fun AlwaysHyperApp(requestOverlayPermission: () -> Unit) {
     var radius by remember { mutableFloatStateOf(Prefs.getRadius(context).toFloat()) }
     var topOffset by remember { mutableFloatStateOf(Prefs.getTopOffset(context).toFloat()) }
     var isRecording by remember { mutableStateOf(Prefs.isRecordingActive(context)) }
+    var anchorToCamera by remember { mutableStateOf(Prefs.isAnchorToCameraOn(context)) }
 
     // Recording can be stopped from outside this screen (the Quick Settings
     // tile, the notification's "Стоп" button, or the system's own recording
@@ -205,6 +206,7 @@ private fun AlwaysHyperApp(requestOverlayPermission: () -> Unit) {
                                 radius = radius,
                                 topOffset = topOffset,
                                 isRecording = isRecording,
+                                anchorToCamera = anchorToCamera,
                                 onOverlayToggle = ::onToggleOverlay,
                                 onWidthChange = {
                                     width = it
@@ -221,6 +223,10 @@ private fun AlwaysHyperApp(requestOverlayPermission: () -> Unit) {
                                 onTopOffsetChange = {
                                     topOffset = it
                                     Prefs.setTopOffset(context, it.toInt())
+                                },
+                                onAnchorToCameraChange = {
+                                    anchorToCamera = it
+                                    Prefs.setAnchorToCameraOn(context, it)
                                 },
                                 onStartRecording = ::onStartRecording,
                                 onStopRecording = ::onStopRecording
@@ -325,11 +331,13 @@ private fun AppearanceTab(
     radius: Float,
     topOffset: Float,
     isRecording: Boolean,
+    anchorToCamera: Boolean,
     onOverlayToggle: (Boolean) -> Unit,
     onWidthChange: (Float) -> Unit,
     onHeightChange: (Float) -> Unit,
     onRadiusChange: (Float) -> Unit,
     onTopOffsetChange: (Float) -> Unit,
+    onAnchorToCameraChange: (Boolean) -> Unit,
     onStartRecording: () -> Unit,
     onStopRecording: () -> Unit
 ) {
@@ -414,6 +422,19 @@ private fun AppearanceTab(
             onChange = onTopOffsetChange,
             enabled = overlayOn
         )
+        RowSeparator()
+        SettingsRow {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Всегда возле камеры", color = TextPrimary, fontSize = 16.sp)
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = "Остров держится точно у камеры, даже при повороте экрана",
+                    color = TextSecondary,
+                    fontSize = 12.sp
+                )
+            }
+            IslandToggle(checked = anchorToCamera, onChange = onAnchorToCameraChange)
+        }
     }
     SectionFooter(
         (if (overlayOn)
